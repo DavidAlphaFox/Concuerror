@@ -161,7 +161,13 @@ inspect(Tag, Args, Node, Acc) ->
 receive_matching_fun(Node) ->
   Clauses = erl_syntax:receive_expr_clauses(Node),
   NewClauses = extract_patterns(Clauses),
-  erl_syntax:fun_expr(NewClauses).
+  %% We need a case in a fun to avoid shadowing
+  %% i.e. if the receive uses a bound var in a clause and we insert it
+  %%      bare as a clause into a new fun it will shadow the original
+  %%      and change the code's meaning
+  Var = erl_syntax:variable('__Concuerror42'),
+  NewCase = erl_syntax:case_expr(Var, NewClauses),
+  erl_syntax:fun_expr([erl_syntax:clause([Var], abstr(true), [NewCase])]).
 
 extract_patterns(Clauses) ->
   extract_patterns(Clauses, []).
