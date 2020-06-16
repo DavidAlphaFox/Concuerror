@@ -90,27 +90,30 @@ mapfold(Node, Acc) ->
       receive_expr ->
         %% io:format("BEF:~n~p~n", [Node]),
         Clauses = erl_syntax:receive_expr_clauses(Node),
-        Timeout =
-          case erl_syntax:receive_expr_timeout(Node) of
-            none -> abstr(infinity);
-            T -> T
+        Timeout = erl_syntax:receive_expr_timeout(Node),
+        TArg =
+          case Timeout =:= none of
+            true -> abstr(infinity);
+            false -> Timeout
           end,
-        Action =
-          case erl_syntax:receive_expr_action(Node) of
-            [] -> [abstr(ok)];
-            A -> A
-          end,
+        Action = erl_syntax:receive_expr_action(Node),
         Fun = receive_matching_fun(Node),
         %% io:format("~p~n", [Fun]),
         %% erl_syntax:revert(Fun),
-        Call = inspect('receive', [Fun, Timeout], Node, Acc),
+        Call = inspect('receive', [Fun, TArg], Node, Acc),
         %% io:format("~p~n", [Call]),
         %% erl_syntax:revert(Call),
         %% Replace original timeout with a fresh variable to make it
         %% skippable on demand.
         TimeoutVar = erl_syntax:variable(erl_syntax_lib:new_variable_name(Var)),
         Match = erl_syntax:match_expr(TimeoutVar, Call),
-        RecNode = erl_syntax:receive_expr(Clauses, TimeoutVar, Action),
+        RecNode =
+          case Timeout =:= none of
+            true ->
+              erl_syntax:receive_expr(Clauses);
+            false ->
+              erl_syntax:receive_expr(Clauses, TimeoutVar, Action)
+          end,
         %% io:format("~p~n", [RecNode]),
         %% erl_syntax:revert(RecNode),
         Block = erl_syntax:block_expr([Match, RecNode]),
