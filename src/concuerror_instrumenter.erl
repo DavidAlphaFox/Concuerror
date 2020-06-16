@@ -41,7 +41,6 @@ instrument(Module, AbstractCode, Instrumented) ->
 
 %% Replace with form_list please.
 fold([], Arg, Acc) ->
-  %% io:format("Revert...~n"),
   {erl_syntax:revert_forms(lists:reverse(Acc)), Arg};
 fold([H|T], Arg, Acc) ->
   ArgIn = Arg#{var => erl_syntax_lib:variables(H)},
@@ -88,39 +87,33 @@ mapfold(Node, Acc) ->
           _ -> Node
         end;
       receive_expr ->
-        %% io:format("BEF:~n~p~n", [Node]),
-        Clauses = erl_syntax:receive_expr_clauses(Node),
+        Fun = receive_matching_fun(Node),
         Timeout = erl_syntax:receive_expr_timeout(Node),
         TArg =
           case Timeout =:= none of
             true -> abstr(infinity);
             false -> Timeout
           end,
-        Action = erl_syntax:receive_expr_action(Node),
-        Fun = receive_matching_fun(Node),
-        %% io:format("~p~n", [Fun]),
-        %% erl_syntax:revert(Fun),
         Call = inspect('receive', [Fun, TArg], Node, Acc),
-        %% io:format("~p~n", [Call]),
-        %% erl_syntax:revert(Call),
-        %% Replace original timeout with a fresh variable to make it
-        %% skippable on demand.
-        TimeoutVar = erl_syntax:variable(erl_syntax_lib:new_variable_name(Var)),
-        Match = erl_syntax:match_expr(TimeoutVar, Call),
-        RecNode =
-          case Timeout =:= none of
-            true ->
-              erl_syntax:receive_expr(Clauses);
-            false ->
-              erl_syntax:receive_expr(Clauses, TimeoutVar, Action)
-          end,
-        %% io:format("~p~n", [RecNode]),
-        %% erl_syntax:revert(RecNode),
-        Block = erl_syntax:block_expr([Match, RecNode]),
-        %% io:format("~p~n", [Block]),
-        %% erl_syntax:revert(Block),
-        %% io:format("Good!~n"),
-        {newvar, Block, TimeoutVar};
+        case Timeout =:= none of
+          true ->
+            %% Leave receives without after clauses unaffected, so
+            %% that the compiler can expose matched patterns to the
+            %% rest of the program
+            erl_syntax:block_expr([Call, Node]);
+          false ->
+            %% Otherwise, replace original timeout with a fresh
+            %% variable to make the after clause immediately reachable
+            %% when needed.
+            Clauses = erl_syntax:receive_expr_clauses(Node),
+            Action = erl_syntax:receive_expr_action(Node),
+            TimeoutVar =
+              erl_syntax:variable(erl_syntax_lib:new_variable_name(Var)),
+            Match = erl_syntax:match_expr(TimeoutVar, Call),
+            RecNode = erl_syntax:receive_expr(Clauses, TimeoutVar, Action),
+            Block = erl_syntax:block_expr([Match, RecNode]),
+            {newvar, Block, TimeoutVar}
+        end;
       _ -> Node
     end,
   {NewNode, NewVar, NewWarnings} =
