@@ -83,7 +83,7 @@ mapfold(Node, Acc) ->
             Left = erl_syntax:infix_expr_left(Node),
             Right = erl_syntax:infix_expr_right(Node),
             Args = erl_syntax:list([Left, Right]),
-            inspect(call, [abstr(erlang), abstr(send), Args], Node, Acc);
+            inspect(call, [abstr(erlang), abstr('!'), Args], Node, Acc);
           _ -> Node
         end;
       receive_expr ->
